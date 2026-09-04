@@ -12,18 +12,31 @@ export default async function handler(req, res) {
     let systemPrompt = "";
     
     if (lang === 'en') {
-        systemPrompt = `Eres un asistente experto para personas sordas en México. Recibirás un texto transcrito de una clase en inglés.
-Debes devolver OBLIGATORIAMENTE un objeto JSON válido con dos claves:
-1. "traduccion": La traducción del texto original inglés al español de forma natural.
-2. "lsm": Una versión simplificada de la traducción pensada para personas sordas. Sigue el orden mental de LSM (primero el tiempo/contexto, luego lugar, luego quién, luego qué, luego la acción), pero escríbelo como una frase DIRECTA y LIMPIA, SIN etiquetas como "Tiempo:", "Lugar:", "Sujeto:", "Objeto:" ni "Verbo:". Solo la frase simplificada, sin artículos ni palabras de relleno. Ejemplo: "HOY CLASE → FUNCIÓN TRADUCCIÓN SERVIR" en lugar de "Tiempo: hoy. Lugar: clase. Sujeto: función...".
-MATEMÁTICAS: Convierte expresiones matemáticas habladas a símbolos reales (ej. "x² + y", "3/2", "√9").
-MODERACIÓN: Censura groserías con ***.`;
+        systemPrompt = `Recibirás texto transcrito de una clase en inglés. Devuelve un JSON con dos claves:
+
+1. "traduccion": Traducción fiel al español. NO agregues palabras ni contexto que no estén en el original.
+
+2. "lsm": Simplificación para personas sordas (LSM). REGLAS ESTRICTAS:
+- Usa ÚNICAMENTE palabras que aparecen en el texto original. NUNCA inventes ni agregues palabras que no se dijeron.
+- Elimina solo artículos (el, la, los, un, una), preposiciones de relleno (de, en, con, por) y conectores innecesarios.
+- Mantén el orden: contexto temporal → lugar → sujeto → objeto → verbo.
+- NO pongas etiquetas como "Tiempo:", "Lugar:", etc. Solo la frase limpia.
+- Si hay matemáticas habladas, usa símbolos: x², √9, 3/4.
+- Censura groserías con ***.
+
+Ejemplo: Si el texto dice "Today we are going to learn about functions", el LSM sería "HOY APRENDER FUNCIONES" — NO inventes palabras como "clase", "profesor", "importante" si no se dijeron.`;
     } else {
-        systemPrompt = `Eres un asistente experto para personas sordas en México. Recibirás un texto transcrito de una clase en español.
-Debes devolver OBLIGATORIAMENTE un objeto JSON válido con una sola clave:
-1. "lsm": Una versión simplificada del texto pensada para personas sordas. Sigue el orden mental de LSM (primero el tiempo/contexto, luego lugar, luego quién, luego qué, luego la acción), pero escríbelo como una frase DIRECTA y LIMPIA, SIN etiquetas como "Tiempo:", "Lugar:", "Sujeto:", "Objeto:" ni "Verbo:". Solo la frase simplificada, sin artículos ni palabras de relleno. Ejemplo: "HOY CLASE → FUNCIÓN TRADUCCIÓN SERVIR" en lugar de "Tiempo: presente. Lugar: clase. Sujeto: función...".
-MATEMÁTICAS: Convierte expresiones matemáticas habladas a símbolos reales (ej. "x² + y", "3/4", "√9").
-MODERACIÓN: Censura groserías con ***.`;
+        systemPrompt = `Recibirás texto transcrito de una clase en español. Devuelve un JSON con una sola clave:
+
+1. "lsm": Simplificación para personas sordas (LSM). REGLAS ESTRICTAS:
+- Usa ÚNICAMENTE palabras que aparecen en el texto original. NUNCA inventes ni agregues palabras que no se dijeron.
+- Elimina solo artículos (el, la, los, un, una), preposiciones de relleno (de, en, con, por) y conectores innecesarios.
+- Mantén el orden: contexto temporal → lugar → sujeto → objeto → verbo.
+- NO pongas etiquetas como "Tiempo:", "Lugar:", etc. Solo la frase limpia.
+- Si hay matemáticas habladas, usa símbolos: x², √9, 3/4.
+- Censura groserías con ***.
+
+Ejemplo: Si el texto dice "Hoy vamos a aprender sobre las funciones matemáticas", el LSM sería "HOY APRENDER FUNCIONES MATEMÁTICAS" — NO inventes palabras como "clase", "profesor", "importante" si no se dijeron.`;
     }
 
     try {
@@ -40,7 +53,7 @@ MODERACIÓN: Censura groserías con ***.`;
                     { role: "system", content: systemPrompt },
                     { role: "user", content: text }
                 ],
-                temperature: 0.3
+                temperature: 0.1
             })
         });
 
