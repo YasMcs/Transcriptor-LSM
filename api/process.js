@@ -18,22 +18,22 @@ export default async function handler(req, res) {
 2. "lsm": Adaptación a la estructura gramatical de Lengua de Señas Mexicana (LSM).
 
 REGLAS ESTRICTAS PARA LSM:
-- Traduce ÚNICAMENTE el texto proporcionado por Whisper. NO inventes ni agregues palabras o conceptos que no se dijeron.
-- Elimina artículos (el, la, los, un, una), preposiciones y conectores innecesarios.
-- Reordena las palabras según la estructura LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
-- Escribe TODO en minúsculas (texto en minúsculas normal, NUNCA EN MAYÚSCULAS).
-- NO utilices etiquetas como "Tiempo:", "Lugar:", "Sujeto:", "Verbo:", etc. Solo la frase en LSM limpia.`;
+- NO RESUMAS el texto. Mantén absolutamente todos los detalles e información original.
+- Solo adapta la gramática. Reordena las palabras según la estructura LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
+- Elimina artículos (el, la, los, un, una) y conectores innecesarios, pero NO elimines ideas.
+- Escribe TODO en minúsculas.
+- NO utilices etiquetas como "Tiempo:", "Lugar:", etc. Solo la frase limpia.`;
     } else {
         systemPrompt = `Recibirás texto transcrito por Whisper en español. Devuelve un JSON con una sola clave:
 
 1. "lsm": Adaptación a la estructura gramatical de Lengua de Señas Mexicana (LSM).
 
 REGLAS ESTRICTAS PARA LSM:
-- Traduce ÚNICAMENTE el texto proporcionado por Whisper. NO inventes ni agregues palabras o conceptos que no se dijeron.
-- Elimina artículos (el, la, los, un, una), preposiciones y conectores innecesarios.
-- Reordena las palabras según la estructura LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
-- Escribe TODO en minúsculas (texto en minúsculas normal, NUNCA EN MAYÚSCULAS).
-- NO utilices etiquetas como "Tiempo:", "Lugar:", "Sujeto:", "Verbo:", etc. Solo la frase en LSM limpia.`;
+- NO RESUMAS el texto. Mantén absolutamente todos los detalles e información original.
+- Solo adapta la gramática. Reordena las palabras según la estructura LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
+- Elimina artículos (el, la, los, un, una) y conectores innecesarios, pero NO elimines ideas.
+- Escribe TODO en minúsculas.
+- NO utilices etiquetas como "Tiempo:", "Lugar:", etc. Solo la frase limpia.`;
     }
 
     try {
