@@ -2,6 +2,8 @@ let mediaRecorder;
 let stream;
 let isRecording = false;
 let pendingWhisperRequests = 0;
+let chunkInterval = null;  // interval para requestData cada 8s
+let audioBuffer = [];       // acumula chunks entre intervalos
 
 // Acumuladores de texto para mantener el historial de la sesión
 let accumulatedOriginal = "";
@@ -90,36 +92,60 @@ recordBtn.addEventListener('click', async () => {
             try { recognition.start(); } catch (_) { }
         }
 
-        // ── MediaRecorder CONTINUO con timeslice de 8s ──────────────────────
-        // ondataavailable se dispara cada 8 segundos automáticamente.
-        // NO hay stop/restart — el recorder corre de forma continua.
+        // ── MediaRecorder CONTINUO + requestData cada 8s ───────────────────
+        // start() sin argumento: el recorder acumula datos continuamente.
+        // Cada 8s, requestData() dispara ondataavailable con lo acumulado.
+        // Es más confiable que timeslice entre distintos navegadores.
+        audioBuffer = [];
         mediaRecorder = new MediaRecorder(stream);
 
-        mediaRecorder.ondataavailable = async (event) => {
-            if (!event.data || event.data.size === 0) return;
-
-            const blob = event.data;
-            console.log(`Chunk recibido: ${blob.size} bytes`);
-
-            // Mínimo ~5KB (evita chunks vacíos o de ruido puro)
-            if (blob.size < 5000) {
-                console.log('Chunk muy pequeño, ignorado.');
-                return;
+        mediaRecorder.ondataavailable = (event) => {
+            // Acumular los datos de audio en el buffer
+            if (event.data && event.data.size > 0) {
+                audioBuffer.push(event.data);
             }
-
-            // Enviar a Whisper (sin await para no bloquear los siguientes chunks)
-            sendToWhisper(blob, languageSelect.value);
         };
 
         mediaRecorder.onstop = () => {
-            // Esto solo ocurre cuando el usuario presiona Detener
+            // Al detener, enviar lo que quedó en el buffer
+            clearInterval(chunkInterval);
+            chunkInterval = null;
+            if (audioBuffer.length > 0) {
+                const finalBlob = new Blob(audioBuffer, { type: mediaRecorder.mimeType || 'audio/webm' });
+                audioBuffer = [];
+                console.log(`Chunk final al detener: ${finalBlob.size} bytes`);
+                if (finalBlob.size >= 3000) {
+                    sendToWhisper(finalBlob, languageSelect.value);
+                }
+            }
             stream.getTracks().forEach(t => t.stop());
             if (recognition) { try { recognition.stop(); } catch (_) { } }
             checkIfFinished();
         };
 
-        // timeslice = 8000ms → cada 8 segundos se dispara ondataavailable
-        mediaRecorder.start(8000);
+        // Iniciar sin timeslice
+        mediaRecorder.start();
+
+        // Cada 8 segundos, pedir los datos acumulados y enviarlos a Whisper
+        chunkInterval = setInterval(() => {
+            if (!isRecording || !mediaRecorder || mediaRecorder.state !== 'recording') return;
+
+            // requestData() dispara ondataavailable con lo acumulado hasta ahora
+            mediaRecorder.requestData();
+
+            // Pequeña espera para que el evento ondataavailable se procese
+            setTimeout(() => {
+                if (audioBuffer.length === 0) return;
+                const blob = new Blob(audioBuffer, { type: mediaRecorder.mimeType || 'audio/webm' });
+                audioBuffer = []; // limpiar buffer para el siguiente ciclo
+                console.log(`Chunk de 8s: ${blob.size} bytes`);
+                if (blob.size >= 3000) {
+                    sendToWhisper(blob, languageSelect.value);
+                } else {
+                    console.log('Chunk muy pequeño (silencio?), ignorado.');
+                }
+            }, 200);
+        }, 8000);
 
     } catch (err) {
         console.error('Error al acceder al micrófono:', err);
