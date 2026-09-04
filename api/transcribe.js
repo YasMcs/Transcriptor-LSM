@@ -19,20 +19,29 @@ export default async function handler(req, res) {
 
         const formData = new FormData();
         formData.append('file', blob, fileName);
-        formData.append('model', 'whisper-1');
+
+        // Si existe GROQ_API_KEY, usamos Groq con Whisper Large v3 (ultra rápido ~0.2s)
+        const useGroq = Boolean(process.env.GROQ_API_KEY);
+        const apiUrl = useGroq 
+            ? 'https://api.groq.com/openai/v1/audio/transcriptions'
+            : 'https://api.openai.com/v1/audio/transcriptions';
+        const apiKey = useGroq ? process.env.GROQ_API_KEY : process.env.OPENAI_API_KEY;
+        const model = useGroq ? 'whisper-large-v3-turbo' : 'whisper-1';
+
+        formData.append('model', model);
         formData.append('language', language || 'es');
 
-        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                'Authorization': `Bearer ${apiKey}`
             },
             body: formData
         });
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error?.message || 'Error from OpenAI API');
+            throw new Error(error.error?.message || error.message || 'Error de API de transcripción');
         }
 
         const data = await response.json();
@@ -42,3 +51,4 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: error.message });
     }
 }
+

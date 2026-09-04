@@ -217,7 +217,7 @@ function iniciarGrabacionDeSegmento(id) {
 
     localRecorder.start();
 
-    // Fuerza de seguridad: si pasaron 10 segundos y no hay pausa, 
+    // Fuerza de seguridad: si pasaron 6 segundos y no hay pausa, 
     // cortamos a la fuerza para que Whisper no se atrase demasiado.
     setTimeout(() => {
         if (isRecording && localRecorder.state === 'recording') {
@@ -232,7 +232,7 @@ function iniciarGrabacionDeSegmento(id) {
             activeRecorder = iniciarGrabacionDeSegmento(currentSegmentId);
             renderText();
         }
-    }, 10000);
+    }, 6000);
 
     return localRecorder;
 }
