@@ -1,10 +1,9 @@
 let mediaRecorder;
-let audioChunks = [];
 let stream;
-let isRecordingLoop = false;
+let isRecording = false;
 let pendingWhisperRequests = 0;
 
-// Acumuladores de texto para mantener el historial de la sesión larga
+// Acumuladores de texto para mantener el historial de la sesión
 let accumulatedOriginal = "";
 let accumulatedTranslation = "";
 let accumulatedSimplified = "";
@@ -13,7 +12,6 @@ let currentInterim = "";
 const recordBtn = document.getElementById('recordBtn');
 const stopBtn = document.getElementById('stopBtn');
 const statusText = document.getElementById('status');
-
 const languageSelect = document.getElementById('languageSelect');
 const transcriptionOutput = document.getElementById('transcription');
 const translationOutput = document.getElementById('translationText');
@@ -21,7 +19,7 @@ const simplifiedOutput = document.getElementById('simplifiedText');
 const containerTranslation = document.getElementById('container-translation');
 const labelTranscription = document.getElementById('label-transcription');
 
-// Cambiar la vista dependiendo del idioma seleccionado
+// ─── Vista por idioma ─────────────────────────────────────────────────────────
 languageSelect.addEventListener('change', () => {
     if (languageSelect.value === 'en') {
         containerTranslation.style.display = 'block';
@@ -30,12 +28,9 @@ languageSelect.addEventListener('change', () => {
         containerTranslation.style.display = 'none';
         labelTranscription.textContent = 'Texto Original (Español)';
     }
-    if (recognition && isRecordingLoop) {
-        recognition.lang = languageSelect.value === 'en' ? 'en-US' : 'es-MX';
-    }
 });
 
-// ─── SpeechRecognition: muestra texto en TIEMPO REAL mientras se graba ──────────
+// ─── SpeechRecognition: texto instantáneo mientras se habla ──────────────────
 let recognition;
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -49,39 +44,33 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             interim += event.results[i][0].transcript;
         }
         currentInterim = interim;
-        // Mostrar en pantalla lo que se dice AHORA (texto provisional + confirmado por Whisper)
         transcriptionOutput.value = accumulatedOriginal + currentInterim;
         transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
     };
 
     recognition.onerror = (e) => {
-        if (e.error === 'network') {
-            // Error de red en SpeechRecognition (Google API). Reintentar después de un momento.
-            if (isRecordingLoop) {
-                setTimeout(() => {
-                    try { recognition.start(); } catch (err) { }
-                }, 1000);
-            }
+        // En error de red, reintentar automáticamente
+        if (e.error === 'network' && isRecording) {
+            setTimeout(() => {
+                try { recognition.start(); } catch (_) { }
+            }, 1000);
         }
-        // Ignorar errores no-speech y aborted (son normales)
     };
 
     recognition.onend = () => {
-        // Si todavía estamos grabando, reiniciar automáticamente
-        if (isRecordingLoop) {
-            try { recognition.start(); } catch (e) { }
+        if (isRecording) {
+            try { recognition.start(); } catch (_) { }
         }
     };
 }
 
-// ─── BOTÓN GRABAR ────────────────────────────────────────────────────────────────
+// ─── BOTÓN GRABAR ─────────────────────────────────────────────────────────────
 recordBtn.addEventListener('click', async () => {
     try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        isRecordingLoop = true;
+        isRecording = true;
         pendingWhisperRequests = 0;
 
-        // Limpiar todo
         accumulatedOriginal = "";
         accumulatedTranslation = "";
         accumulatedSimplified = "";
@@ -92,93 +81,72 @@ recordBtn.addEventListener('click', async () => {
 
         recordBtn.disabled = true;
         stopBtn.disabled = false;
-        statusText.textContent = '🔴 Grabando... (El texto aparecerá aquí en tiempo real)';
+        statusText.textContent = '🔴 Grabando... (texto aparecerá cada ~8 segundos vía Whisper)';
         statusText.className = 'status recording';
 
-        // ✅ FIX: Iniciar recognition correctamente al comenzar la grabación
+        // Iniciar reconocimiento de voz en tiempo real
         if (recognition) {
             recognition.lang = languageSelect.value === 'en' ? 'en-US' : 'es-MX';
-            try { recognition.start(); } catch (e) { }
+            try { recognition.start(); } catch (_) { }
         }
 
-        startChunk();
+        // ── MediaRecorder CONTINUO con timeslice de 8s ──────────────────────
+        // ondataavailable se dispara cada 8 segundos automáticamente.
+        // NO hay stop/restart — el recorder corre de forma continua.
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = async (event) => {
+            if (!event.data || event.data.size === 0) return;
+
+            const blob = event.data;
+            console.log(`Chunk recibido: ${blob.size} bytes`);
+
+            // Mínimo ~5KB (evita chunks vacíos o de ruido puro)
+            if (blob.size < 5000) {
+                console.log('Chunk muy pequeño, ignorado.');
+                return;
+            }
+
+            // Enviar a Whisper (sin await para no bloquear los siguientes chunks)
+            sendToWhisper(blob, languageSelect.value);
+        };
+
+        mediaRecorder.onstop = () => {
+            // Esto solo ocurre cuando el usuario presiona Detener
+            stream.getTracks().forEach(t => t.stop());
+            if (recognition) { try { recognition.stop(); } catch (_) { } }
+            checkIfFinished();
+        };
+
+        // timeslice = 8000ms → cada 8 segundos se dispara ondataavailable
+        mediaRecorder.start(8000);
 
     } catch (err) {
-        console.error("Error al acceder al micrófono:", err);
+        console.error('Error al acceder al micrófono:', err);
         statusText.textContent = 'Error: No se pudo acceder al micrófono.';
         statusText.className = 'status error';
     }
 });
 
-// ─── LOOP DE CHUNKS para Whisper (cada 8 segundos) ──────────────────────────────
-function startChunk() {
-    if (!isRecordingLoop) return;
-
-    // ✅ FIX: NO reiniciamos recognition aquí, lo dejamos correr de manera continua
-    // Solo reiniciamos el MediaRecorder para tomar fragmentos de audio para Whisper
-
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
-
-    // timeslice=250ms: fuerza la entrega de datos cada 250ms para garantizar
-    // que ondataavailable se dispare y el blob tenga contenido real de audio
-    mediaRecorder.ondataavailable = event => {
-        if (event.data.size > 0) audioChunks.push(event.data);
-    };
-
-    mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        
-        // Guardia de tamaño mínimo: ~5KB equivale a ~0.2s de audio mínimo
-        // Evita el error "Audio file is too short" de Whisper
-        const MIN_BLOB_SIZE = 5000;
-        if (audioBlob.size >= MIN_BLOB_SIZE) {
-            sendToWhisper(audioBlob, languageSelect.value);
-        } else {
-            console.log(`Chunk ignorado (${audioBlob.size} bytes, muy pequeño para Whisper)`);
-            // Aun así decrementar el contador si estábamos esperando
-            checkIfFinished();
-        }
-
-        if (isRecordingLoop) {
-            startChunk();
-        } else {
-            stream.getTracks().forEach(track => track.stop());
-            if (recognition) { try { recognition.stop(); } catch (e) { } }
-            checkIfFinished();
-        }
-    };
-
-    // timeslice=250ms garantiza que los datos se acumulen continuamente
-    mediaRecorder.start(250);
-
-    // Cortar cada 8 segundos y enviarlo a Whisper
-    setTimeout(() => {
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            mediaRecorder.stop();
-        }
-    }, 8000);
-}
-
-// ─── BOTÓN DETENER ────────────────────────────────────────────────────────────────
+// ─── BOTÓN DETENER ────────────────────────────────────────────────────────────
 stopBtn.addEventListener('click', () => {
-    isRecordingLoop = false;
+    isRecording = false;
     stopBtn.disabled = true;
-    statusText.textContent = '⏳ Procesando el último fragmento con Whisper...';
+    statusText.textContent = '⏳ Procesando último fragmento...';
     statusText.className = 'status recording';
 
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+        mediaRecorder.stop(); // Dispara onstop → limpia y llama checkIfFinished
     } else {
-        stream?.getTracks().forEach(track => track.stop());
-        if (recognition) { try { recognition.stop(); } catch (e) { } }
+        stream?.getTracks().forEach(t => t.stop());
+        if (recognition) { try { recognition.stop(); } catch (_) { } }
         checkIfFinished();
     }
 });
 
 function checkIfFinished() {
-    if (!isRecordingLoop && pendingWhisperRequests === 0) {
-        statusText.textContent = '✅ Clase finalizada. Todo fue guardado exitosamente.';
+    if (!isRecording && pendingWhisperRequests === 0) {
+        statusText.textContent = '✅ Clase finalizada. Todo fue guardado.';
         statusText.className = 'status success';
         recordBtn.disabled = false;
         stopBtn.disabled = true;
@@ -196,11 +164,11 @@ function blobToBase64(blob) {
     });
 }
 
-// ─── WHISPER: Transcripción precisa (llega ~8s después de grabarlo) ───────────
+// ─── WHISPER: Transcripción precisa cada ~8s ──────────────────────────────────
 const WHISPER_HALLUCINATIONS = [
     'amara.org', 'subtítulos realizados', 'subtitulado por',
     'subtítulos por', 'transcripción por', 'comunidad de amara',
-    'traducido por', 'www.', '.com', '.net', '.org'
+    'traducido por'
 ];
 
 async function sendToWhisper(audioBlob, lang) {
@@ -217,35 +185,32 @@ async function sendToWhisper(audioBlob, lang) {
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
             const errMsg = errData.error || `HTTP ${response.status}`;
-            // Mostrar el error REAL en pantalla para que sea visible
-            console.error("Whisper error:", errMsg);
+            console.error('Whisper error:', errMsg);
             statusText.textContent = `⚠️ Error Whisper: ${errMsg}`;
             statusText.className = 'status error';
             return;
         }
 
         const data = await response.json();
-        let normalText = data.text?.trim();
+        const normalText = data.text?.trim();
         if (!normalText) return;
 
-        // Filtrar alucinaciones conocidas de Whisper (texto basura en silencio)
-        const lowerText = normalText.toLowerCase();
-        const isHallucination = WHISPER_HALLUCINATIONS.some(h => lowerText.includes(h));
-        if (isHallucination) {
-            console.log("Alucinación de Whisper filtrada:", normalText);
+        // Filtrar alucinaciones de Whisper (texto basura en silencio)
+        const lower = normalText.toLowerCase();
+        if (WHISPER_HALLUCINATIONS.some(h => lower.includes(h))) {
+            console.log('Alucinación de Whisper filtrada:', normalText);
             return;
         }
 
-        // Acumular texto confirmado por Whisper (alta precisión)
-        accumulatedOriginal += normalText + " ";
-        // El texto en pantalla = lo que Whisper confirmó + lo que SpeechRecognition ve AHORA
+        // Acumular texto confirmado por Whisper
+        accumulatedOriginal += normalText + ' ';
         transcriptionOutput.value = accumulatedOriginal + currentInterim;
         transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
 
         await processWithAI(normalText, lang);
 
     } catch (error) {
-        console.error("Error al transcribir fragmento (Whisper):", error);
+        console.error('Error al transcribir fragmento:', error);
         statusText.textContent = '⚠️ Error de red al conectar con la API';
         statusText.className = 'status error';
     } finally {
@@ -254,7 +219,7 @@ async function sendToWhisper(audioBlob, lang) {
     }
 }
 
-// ─── PROCESAR CON IA (simplificación LSM / traducción) ───────────────────────
+// ─── PROCESAMIENTO CON IA (LSM / Traducción) ──────────────────────────────────
 async function processWithAI(text, lang) {
     try {
         const response = await fetch('/api/process', {
@@ -265,25 +230,25 @@ async function processWithAI(text, lang) {
 
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
-            console.error("Error en /api/process:", errData.error || `HTTP ${response.status}`);
+            console.error('Error en /api/process:', errData.error || `HTTP ${response.status}`);
             return;
         }
 
         const jsonResult = await response.json();
 
         if (lang === 'en' && jsonResult.traduccion) {
-            accumulatedTranslation += jsonResult.traduccion + "\n\n";
+            accumulatedTranslation += jsonResult.traduccion + '\n\n';
             translationOutput.value = accumulatedTranslation;
             translationOutput.scrollTop = translationOutput.scrollHeight;
         }
 
         if (jsonResult.lsm) {
-            accumulatedSimplified += jsonResult.lsm + "\n\n";
+            accumulatedSimplified += jsonResult.lsm + '\n\n';
             simplifiedOutput.value = accumulatedSimplified;
             simplifiedOutput.scrollTop = simplifiedOutput.scrollHeight;
         }
 
     } catch (error) {
-        console.error("Error al procesar con IA:", error);
+        console.error('Error al procesar con IA:', error);
     }
 }
