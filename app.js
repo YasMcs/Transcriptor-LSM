@@ -56,7 +56,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 
         // Texto final confirmado → acumular y disparar IA INMEDIATAMENTE
         if (finalSegment.trim()) {
-            accumulatedOriginal += finalSegment + ' ';
+            accumulatedOriginal += finalSegment.trim() + '\n\n';
             currentInterim = '';
             // IA casi instantánea (no espera Whisper)
             processWithAI(finalSegment.trim(), languageSelect.value);
@@ -230,18 +230,15 @@ async function sendToWhisper(audioBlob, lang) {
         const lower = normalText.toLowerCase();
         if (WHISPER_HALLUCINATIONS.some(h => lower.includes(h))) return;
 
-        // Whisper llegó: corregir el texto acumulado en pantalla
-        // NO disparar processWithAI aquí — ya lo hizo SpeechRecognition finals (más rápido)
-        accumulatedOriginal = accumulatedOriginal + normalText.slice(accumulatedOriginal.trimEnd().length).trimStart();
-        // Simplificación: Whisper acumula por separado sin sobreescribir lo ya procesado
-        transcriptionOutput.value = accumulatedOriginal + currentInterim;
-        transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
-        console.log('Whisper (corrección):', normalText);
-
-        // Solo procesar con IA si SpeechRecognition no está disponible (fallback)
+        // Whisper llegó: solo corregir ortografía en la última oración si SR está disponible.
+        // Si no hay SR (fallback), Whisper es la fuente principal.
         if (!recognition) {
+            accumulatedOriginal += normalText.trim() + '\n\n';
+            transcriptionOutput.value = accumulatedOriginal + currentInterim;
+            transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
             await processWithAI(normalText, lang);
         }
+        console.log('Whisper (corrección):', normalText);
 
     } catch (error) {
         console.error('Error Whisper:', error);
