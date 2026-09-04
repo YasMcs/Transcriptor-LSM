@@ -44,15 +44,26 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 
     recognition.onresult = (event) => {
         let interim = '';
+        let finalSegment = '';
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-            // Solo usar texto provisional para mostrar en pantalla en tiempo real
-            // NO acumulamos ni procesamos con IA aquí — eso lo hace Whisper (más preciso)
-            interim += event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalSegment += event.results[i][0].transcript;
+            } else {
+                interim += event.results[i][0].transcript;
+            }
         }
 
+        // Texto final confirmado → acumular y disparar IA INMEDIATAMENTE
+        if (finalSegment.trim()) {
+            accumulatedOriginal += finalSegment + ' ';
+            currentInterim = '';
+            // IA casi instantánea (no espera Whisper)
+            processWithAI(finalSegment.trim(), languageSelect.value);
+        }
+
+        // Provisional → solo visual
         currentInterim = interim;
-        // Pantalla = texto confirmado por Whisper + lo que se dice AHORA (provisional)
         transcriptionOutput.value = accumulatedOriginal + currentInterim;
         transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
     };
@@ -219,14 +230,18 @@ async function sendToWhisper(audioBlob, lang) {
         const lower = normalText.toLowerCase();
         if (WHISPER_HALLUCINATIONS.some(h => lower.includes(h))) return;
 
-        // Whisper llegó: actualizar la pantalla con texto preciso + disparar IA
-        accumulatedOriginal += normalText + ' ';
+        // Whisper llegó: corregir el texto acumulado en pantalla
+        // NO disparar processWithAI aquí — ya lo hizo SpeechRecognition finals (más rápido)
+        accumulatedOriginal = accumulatedOriginal + normalText.slice(accumulatedOriginal.trimEnd().length).trimStart();
+        // Simplificación: Whisper acumula por separado sin sobreescribir lo ya procesado
         transcriptionOutput.value = accumulatedOriginal + currentInterim;
         transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
-        console.log('Whisper confirmó:', normalText);
+        console.log('Whisper (corrección):', normalText);
 
-        // Procesar con IA (traducción + LSM)
-        await processWithAI(normalText, lang);
+        // Solo procesar con IA si SpeechRecognition no está disponible (fallback)
+        if (!recognition) {
+            await processWithAI(normalText, lang);
+        }
 
     } catch (error) {
         console.error('Error Whisper:', error);
