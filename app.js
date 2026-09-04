@@ -202,6 +202,17 @@ async function sendToWhisper(audioBlob, lang) {
         let normalText = data.text?.trim();
         if (!normalText) return;
 
+        // Filtro Anti-Alucinaciones de Whisper (ocurre cuando hay silencio absoluto o ruido de fondo)
+        const lowerText = normalText.toLowerCase();
+        if (
+            lowerText.includes('amara.org') || 
+            lowerText.includes('subtítulos') || 
+            lowerText.includes('subtitulado por')
+        ) {
+            console.log("Alucinación de Whisper detectada y filtrada:", normalText);
+            return; // Ignoramos el texto basura
+        }
+
         accumulatedOriginal += normalText + " ";
         transcriptionOutput.value = accumulatedOriginal + currentInterim;
         transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
