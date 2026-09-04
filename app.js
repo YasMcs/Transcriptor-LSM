@@ -76,7 +76,7 @@ recordBtn.addEventListener('click', async () => {
 
         recordBtn.disabled = true;
         stopBtn.disabled = false;
-        statusText.textContent = '🔴 Grabando... (texto aparecerá cada ~8s vía Whisper)';
+        statusText.textContent = '🔴 Grabando... (transcribiendo en tiempo real con Whisper)';
         statusText.className = 'status recording';
 
         if (recognition) {
@@ -119,7 +119,7 @@ function grabarChunk() {
         const blob = new Blob(localChunks, { type: localRecorder.mimeType });
         console.log(`Chunk grabado: ${blob.size} bytes (${localRecorder.mimeType})`);
 
-        if (blob.size >= 3000) {
+        if (blob.size >= 1000) {
             sendToWhisper(blob, languageSelect.value);
         } else {
             console.log('Chunk muy pequeño (silencio?), ignorado.');
@@ -138,12 +138,12 @@ function grabarChunk() {
     localRecorder.start(); // Cada localRecorder genera un WebM completo e independiente
 
     // ✅ FIX: el setTimeout usa `localRecorder`, NO `mediaRecorder` (global)
-    // Esto evita que un timeout antiguo detenga un recorder nuevo por error.
+    // 2 segundos → transcripción casi en tiempo real
     setTimeout(() => {
         if (localRecorder.state === 'recording') {
             localRecorder.stop();
         }
-    }, 8000);
+    }, 2000);
 }
 
 // ─── BOTÓN DETENER ────────────────────────────────────────────────────────────
