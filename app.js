@@ -229,9 +229,14 @@ async function sendToWhisper(audioBlob, lang) {
         const lower = normalText.toLowerCase();
         if (WHISPER_HALLUCINATIONS.some(h => lower.includes(h))) return;
 
-        // Whisper llegó: actualizar el texto acumulado con la versión más precisa
-        // Solo actualiza si el texto es significativamente diferente (evita duplicados)
+        // Whisper llegó: actualizar la pantalla con texto preciso + disparar IA
+        accumulatedOriginal += normalText + ' ';
+        transcriptionOutput.value = accumulatedOriginal + currentInterim;
+        transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
         console.log('Whisper confirmó:', normalText);
+
+        // Procesar con IA (traducción + LSM)
+        await processWithAI(normalText, lang);
 
     } catch (error) {
         console.error('Error Whisper:', error);
