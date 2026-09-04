@@ -140,10 +140,10 @@ function grabarChunk() {
 
     localRecorder.start();
 
-    // 8 segundos para Whisper (no bloquea la pantalla, SpeechRecognition ya mostró el texto)
+    // 4 segundos para Whisper (balance ideal entre tiempo real y estabilidad de chunk)
     setTimeout(() => {
         if (localRecorder.state === 'recording') localRecorder.stop();
-    }, 8000);
+    }, 4000);
 }
 
 // ─── BOTÓN DETENER ────────────────────────────────────────────────────────────
@@ -262,7 +262,8 @@ async function processWithAI(text, lang) {
         }
 
         if (jsonResult.lsm) {
-            accumulatedSimplified += jsonResult.lsm + '\n\n';
+            const cleanLsm = jsonResult.lsm.toLowerCase();
+            accumulatedSimplified += cleanLsm + '\n\n';
             simplifiedOutput.value = accumulatedSimplified;
             simplifiedOutput.scrollTop = simplifiedOutput.scrollHeight;
         }

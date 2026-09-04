@@ -12,31 +12,28 @@ export default async function handler(req, res) {
     let systemPrompt = "";
     
     if (lang === 'en') {
-        systemPrompt = `Recibirás texto transcrito de una clase en inglés. Devuelve un JSON con dos claves:
+        systemPrompt = `Recibirás texto transcrito por Whisper. Devuelve un JSON con dos claves:
 
-1. "traduccion": Traducción fiel al español. NO agregues palabras ni contexto que no estén en el original.
+1. "traduccion": Traducción fiel al español.
+2. "lsm": Adaptación a la estructura gramatical de Lengua de Señas Mexicana (LSM).
 
-2. "lsm": Simplificación para personas sordas (LSM). REGLAS ESTRICTAS:
-- Usa ÚNICAMENTE palabras que aparecen en el texto original. NUNCA inventes ni agregues palabras que no se dijeron.
-- Elimina solo artículos (el, la, los, un, una), preposiciones de relleno (de, en, con, por) y conectores innecesarios.
-- Mantén el orden: contexto temporal → lugar → sujeto → objeto → verbo.
-- NO pongas etiquetas como "Tiempo:", "Lugar:", etc. Solo la frase limpia.
-- Si hay matemáticas habladas, usa símbolos: x², √9, 3/4.
-- Censura groserías con ***.
-
-Ejemplo: Si el texto dice "Today we are going to learn about functions", el LSM sería "HOY APRENDER FUNCIONES" — NO inventes palabras como "clase", "profesor", "importante" si no se dijeron.`;
+REGLAS ESTRICTAS PARA LSM:
+- Traduce ÚNICAMENTE el texto proporcionado por Whisper. NO inventes ni agregues palabras o conceptos que no se dijeron.
+- Elimina artículos (el, la, los, un, una), preposiciones y conectores innecesarios.
+- Reordena las palabras según la estructura LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
+- Escribe TODO en minúsculas (texto en minúsculas normal, NUNCA EN MAYÚSCULAS).
+- NO utilices etiquetas como "Tiempo:", "Lugar:", "Sujeto:", "Verbo:", etc. Solo la frase en LSM limpia.`;
     } else {
-        systemPrompt = `Recibirás texto transcrito de una clase en español. Devuelve un JSON con una sola clave:
+        systemPrompt = `Recibirás texto transcrito por Whisper en español. Devuelve un JSON con una sola clave:
 
-1. "lsm": Simplificación para personas sordas (LSM). REGLAS ESTRICTAS:
-- Usa ÚNICAMENTE palabras que aparecen en el texto original. NUNCA inventes ni agregues palabras que no se dijeron.
-- Elimina solo artículos (el, la, los, un, una), preposiciones de relleno (de, en, con, por) y conectores innecesarios.
-- Mantén el orden: contexto temporal → lugar → sujeto → objeto → verbo.
-- NO pongas etiquetas como "Tiempo:", "Lugar:", etc. Solo la frase limpia.
-- Si hay matemáticas habladas, usa símbolos: x², √9, 3/4.
-- Censura groserías con ***.
+1. "lsm": Adaptación a la estructura gramatical de Lengua de Señas Mexicana (LSM).
 
-Ejemplo: Si el texto dice "Hoy vamos a aprender sobre las funciones matemáticas", el LSM sería "HOY APRENDER FUNCIONES MATEMÁTICAS" — NO inventes palabras como "clase", "profesor", "importante" si no se dijeron.`;
+REGLAS ESTRICTAS PARA LSM:
+- Traduce ÚNICAMENTE el texto proporcionado por Whisper. NO inventes ni agregues palabras o conceptos que no se dijeron.
+- Elimina artículos (el, la, los, un, una), preposiciones y conectores innecesarios.
+- Reordena las palabras según la estructura LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
+- Escribe TODO en minúsculas (texto en minúsculas normal, NUNCA EN MAYÚSCULAS).
+- NO utilices etiquetas como "Tiempo:", "Lugar:", "Sujeto:", "Verbo:", etc. Solo la frase en LSM limpia.`;
     }
 
     try {
