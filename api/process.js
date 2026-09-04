@@ -15,23 +15,25 @@ export default async function handler(req, res) {
         systemPrompt = `Recibirás texto transcrito por Whisper. Devuelve un JSON con dos claves:
 
 1. "traduccion": Traducción fiel al español.
-2. "lsm": Adaptación a la estructura gramatical de Lengua de Señas Mexicana (LSM).
+2. "lsm": Adaptación a Lengua de Señas Mexicana (LSM) simplificada.
 
 REGLAS ESTRICTAS PARA LSM:
-- NO RESUMAS el texto. Mantén absolutamente todos los detalles e información original.
-- Solo adapta la gramática. Reordena las palabras según la estructura LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
-- Elimina artículos (el, la, los, un, una) y conectores innecesarios, pero NO elimines ideas.
+- Identifica el tema principal y el sentido exacto de lo que quiere decir el maestro.
+- Extrae e interpreta modismos o expresiones complejas, reescribiéndolos con palabras más sencillas.
+- Adapta la oración a la estructura gramatical LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
+- Elimina artículos (el, la, los, un, una) y conectores innecesarios.
 - Escribe TODO en minúsculas.
 - NO utilices etiquetas como "Tiempo:", "Lugar:", etc. Solo la frase limpia.`;
     } else {
         systemPrompt = `Recibirás texto transcrito por Whisper en español. Devuelve un JSON con una sola clave:
 
-1. "lsm": Adaptación a la estructura gramatical de Lengua de Señas Mexicana (LSM).
+1. "lsm": Adaptación a Lengua de Señas Mexicana (LSM) simplificada.
 
 REGLAS ESTRICTAS PARA LSM:
-- NO RESUMAS el texto. Mantén absolutamente todos los detalles e información original.
-- Solo adapta la gramática. Reordena las palabras según la estructura LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
-- Elimina artículos (el, la, los, un, una) y conectores innecesarios, pero NO elimines ideas.
+- Identifica el tema principal y el sentido exacto de lo que quiere decir el maestro.
+- Extrae e interpreta modismos o expresiones complejas, reescribiéndolos con palabras más sencillas.
+- Adapta la oración a la estructura gramatical LSM: Tiempo → Lugar → Sujeto → Objeto → Verbo.
+- Elimina artículos (el, la, los, un, una) y conectores innecesarios.
 - Escribe TODO en minúsculas.
 - NO utilices etiquetas como "Tiempo:", "Lugar:", etc. Solo la frase limpia.`;
     }
