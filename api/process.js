@@ -12,18 +12,18 @@ export default async function handler(req, res) {
     let systemPrompt = "";
     
     if (lang === 'en') {
-        systemPrompt = `Eres un asistente experto para personas sordomudas en México. Recibirás un texto transcrito de una clase en inglés.
+        systemPrompt = `Eres un asistente experto para personas sordas en México. Recibirás un texto transcrito de una clase en inglés.
 Debes devolver OBLIGATORIAMENTE un objeto JSON válido con dos claves:
 1. "traduccion": La traducción del texto original inglés al español de forma natural.
-2. "lsm": Una simplificación de esa traducción pensada para personas sordomudas usando estructura básica de LSM (Tiempo + Lugar + Sujeto + Objeto + Verbo) y omitiendo artículos/relleno.
-MATEMÁTICAS: Si identificas números, fórmulas o expresiones matemáticas habladas (ej. "x squared plus y", "three over two", "square root of nine"), debes convertirlas a símbolos matemáticos reales (ej. "x² + y", "3/2", "√9") en tus resultados.
-MODERACIÓN CRÍTICA: Censura cualquier grosería o palabra altisonante (tanto en inglés como en español) sustituyéndola por asteriscos (***).`;
+2. "lsm": Una versión simplificada de la traducción pensada para personas sordas. Sigue el orden mental de LSM (primero el tiempo/contexto, luego lugar, luego quién, luego qué, luego la acción), pero escríbelo como una frase DIRECTA y LIMPIA, SIN etiquetas como "Tiempo:", "Lugar:", "Sujeto:", "Objeto:" ni "Verbo:". Solo la frase simplificada, sin artículos ni palabras de relleno. Ejemplo: "HOY CLASE → FUNCIÓN TRADUCCIÓN SERVIR" en lugar de "Tiempo: hoy. Lugar: clase. Sujeto: función...".
+MATEMÁTICAS: Convierte expresiones matemáticas habladas a símbolos reales (ej. "x² + y", "3/2", "√9").
+MODERACIÓN: Censura groserías con ***.`;
     } else {
-        systemPrompt = `Eres un asistente experto para personas sordomudas en México. Recibirás un texto transcrito de una clase en español.
+        systemPrompt = `Eres un asistente experto para personas sordas en México. Recibirás un texto transcrito de una clase en español.
 Debes devolver OBLIGATORIAMENTE un objeto JSON válido con una sola clave:
-1. "lsm": Una simplificación de ese texto pensada para personas sordomudas usando estructura básica de LSM (Tiempo + Lugar + Sujeto + Objeto + Verbo) y omitiendo artículos/relleno.
-MATEMÁTICAS: Si identificas números, fórmulas o expresiones matemáticas habladas (ej. "x al cuadrado más ye", "tres cuartos", "raíz de nueve"), debes convertirlas a símbolos matemáticos reales (ej. "x² + y", "3/4", "√9") en tu resultado.
-MODERACIÓN CRÍTICA: Censura cualquier grosería o palabra altisonante sustituyéndola por asteriscos (***).`;
+1. "lsm": Una versión simplificada del texto pensada para personas sordas. Sigue el orden mental de LSM (primero el tiempo/contexto, luego lugar, luego quién, luego qué, luego la acción), pero escríbelo como una frase DIRECTA y LIMPIA, SIN etiquetas como "Tiempo:", "Lugar:", "Sujeto:", "Objeto:" ni "Verbo:". Solo la frase simplificada, sin artículos ni palabras de relleno. Ejemplo: "HOY CLASE → FUNCIÓN TRADUCCIÓN SERVIR" en lugar de "Tiempo: presente. Lugar: clase. Sujeto: función...".
+MATEMÁTICAS: Convierte expresiones matemáticas habladas a símbolos reales (ej. "x² + y", "3/4", "√9").
+MODERACIÓN: Censura groserías con ***.`;
     }
 
     try {
