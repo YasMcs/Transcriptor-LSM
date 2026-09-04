@@ -55,14 +55,19 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     };
 
     recognition.onerror = (e) => {
-        // Ignorar errores no-speech (silencio), reiniciar en errores recuperables
-        if (e.error !== 'no-speech' && e.error !== 'aborted') {
-            console.warn('SpeechRecognition error:', e.error);
+        if (e.error === 'network') {
+            // Error de red en SpeechRecognition (Google API). Reintentar después de un momento.
+            if (isRecordingLoop) {
+                setTimeout(() => {
+                    try { recognition.start(); } catch (err) { }
+                }, 1000);
+            }
         }
+        // Ignorar errores no-speech y aborted (son normales)
     };
 
     recognition.onend = () => {
-        // Si todavía estamos grabando, reiniciar automáticamente (Chrome lo detiene después de silencio)
+        // Si todavía estamos grabando, reiniciar automáticamente
         if (isRecordingLoop) {
             try { recognition.start(); } catch (e) { }
         }
@@ -115,19 +120,28 @@ function startChunk() {
     mediaRecorder = new MediaRecorder(stream);
     audioChunks = [];
 
+    // timeslice=250ms: fuerza la entrega de datos cada 250ms para garantizar
+    // que ondataavailable se dispare y el blob tenga contenido real de audio
     mediaRecorder.ondataavailable = event => {
         if (event.data.size > 0) audioChunks.push(event.data);
     };
 
     mediaRecorder.onstop = async () => {
-        if (audioChunks.length > 0) {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            // Enviar a Whisper sin esperar (no bloqueante), para no perder el siguiente chunk
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        
+        // Guardia de tamaño mínimo: ~5KB equivale a ~0.2s de audio mínimo
+        // Evita el error "Audio file is too short" de Whisper
+        const MIN_BLOB_SIZE = 5000;
+        if (audioBlob.size >= MIN_BLOB_SIZE) {
             sendToWhisper(audioBlob, languageSelect.value);
+        } else {
+            console.log(`Chunk ignorado (${audioBlob.size} bytes, muy pequeño para Whisper)`);
+            // Aun así decrementar el contador si estábamos esperando
+            checkIfFinished();
         }
 
         if (isRecordingLoop) {
-            startChunk(); // Continuar con el siguiente fragmento
+            startChunk();
         } else {
             stream.getTracks().forEach(track => track.stop());
             if (recognition) { try { recognition.stop(); } catch (e) { } }
@@ -135,7 +149,8 @@ function startChunk() {
         }
     };
 
-    mediaRecorder.start();
+    // timeslice=250ms garantiza que los datos se acumulen continuamente
+    mediaRecorder.start(250);
 
     // Cortar cada 8 segundos y enviarlo a Whisper
     setTimeout(() => {
