@@ -12,11 +12,66 @@ const recordBtn = document.getElementById('recordBtn');
 const stopBtn = document.getElementById('stopBtn');
 const statusText = document.getElementById('status');
 const languageSelect = document.getElementById('languageSelect');
+const engineSelect = document.getElementById('engineSelect');
 const transcriptionOutput = document.getElementById('transcription');
 const translationOutput = document.getElementById('translationText');
 const simplifiedOutput = document.getElementById('simplifiedText');
 const containerTranslation = document.getElementById('container-translation');
 const labelTranscription = document.getElementById('label-transcription');
+
+// ─── WHISPER LOCAL (Transformers.js en el navegador) ─────────────────────────
+let localTranscribers = {};
+let isLocalModelLoading = false;
+
+async function audioBlobToFloat32Array(blob) {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    return audioBuffer.getChannelData(0);
+}
+
+async function getLocalTranscriber(modelName) {
+    if (localTranscribers[modelName]) return localTranscribers[modelName];
+
+    if (isLocalModelLoading) {
+        while (isLocalModelLoading) {
+            await new Promise(r => setTimeout(r, 200));
+        }
+        if (localTranscribers[modelName]) return localTranscribers[modelName];
+    }
+
+    isLocalModelLoading = true;
+    try {
+        statusText.textContent = `⏳ Cargando modelo ${modelName} en el navegador...`;
+        statusText.className = 'status processing';
+
+        const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+        env.allowLocalModels = false;
+
+        localTranscribers[modelName] = await pipeline('automatic-speech-recognition', modelName);
+
+        statusText.textContent = '🔴 Grabando... (transcribiendo en tiempo real)';
+        statusText.className = 'status recording';
+        return localTranscribers[modelName];
+    } catch (err) {
+        console.error('Error al cargar Whisper Local:', err);
+        statusText.textContent = '❌ Error al cargar Whisper Local. Usando fallback de Nube.';
+        statusText.className = 'status error';
+        throw err;
+    } finally {
+        isLocalModelLoading = false;
+    }
+}
+
+async function transcribeLocal(audioBlob, lang, modelName) {
+    const transcriber = await getLocalTranscriber(modelName);
+    const audioData = await audioBlobToFloat32Array(audioBlob);
+    const result = await transcriber(audioData, {
+        language: lang === 'en' ? 'english' : 'spanish',
+        task: 'transcribe'
+    });
+    return result.text;
+}
 
 // Vista por idioma
 languageSelect.addEventListener('change', () => {
@@ -255,36 +310,40 @@ function blobToBase64(blob) {
 async function sendToWhisper(audioBlob, lang, segmentId) {
     pendingWhisperRequests++;
     try {
-        const mimeType = audioBlob.type || 'audio/webm';
-        const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'webm';
-        const audioBase64 = await blobToBase64(audioBlob);
+        const engine = engineSelect ? engineSelect.value : 'cloud';
+        let whisperText = '';
 
-        const response = await fetch('/api/transcribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ audioBase64, language: lang, mimeType, ext })
-        });
+        if (engine && engine.startsWith('local')) {
+            const modelName = engine === 'local-base' ? 'Xenova/whisper-base' : 'Xenova/whisper-tiny';
+            whisperText = await transcribeLocal(audioBlob, lang, modelName);
+        } else {
+            const mimeType = audioBlob.type || 'audio/webm';
+            const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'webm';
+            const audioBase64 = await blobToBase64(audioBlob);
 
-        if (!response.ok) throw new Error('Error Whisper');
+            const response = await fetch('/api/transcribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ audioBase64, language: lang, mimeType, ext })
+            });
 
-        const data = await response.json();
-        const whisperText = data.text?.trim();
+            if (!response.ok) throw new Error('Error Whisper API');
+
+            const data = await response.json();
+            whisperText = data.text?.trim();
+        }
 
         if (whisperText) {
             const lower = whisperText.toLowerCase();
             if (!WHISPER_HALLUCINATIONS.some(h => lower.includes(h))) {
-                // Actualizar el texto del segmento con la versión corregida por Whisper
                 segments[segmentId].text = whisperText;
                 renderText();
-                console.log(`Whisper corrigió segmento ${segmentId}:`, whisperText);
-                
-                // Enviar la versión PERFECTA de Whisper a GPT
+                console.log(`Whisper (${engine}) corrigió segmento ${segmentId}:`, whisperText);
                 await processWithAI(whisperText, lang, segmentId);
                 return;
             }
         }
         
-        // Fallback: Si Whisper falló o es alucinación, mandamos el texto de SR a GPT
         if (segments[segmentId].text) {
              await processWithAI(segments[segmentId].text, lang, segmentId);
         }
