@@ -2,11 +2,13 @@ let mediaRecorder;
 let audioChunks = [];
 let stream;
 let isRecordingLoop = false;
+let pendingWhisperRequests = 0; // Para saber cuándo Whisper termina de procesar todo
 
 // Acumuladores de texto para mantener el historial de la sesión larga
 let accumulatedOriginal = "";
 let accumulatedTranslation = "";
 let accumulatedSimplified = "";
+let currentInterim = "";
 
 const recordBtn = document.getElementById('recordBtn');
 const stopBtn = document.getElementById('stopBtn');
@@ -29,26 +31,34 @@ languageSelect.addEventListener('change', () => {
         labelTranscription.textContent = 'Texto Original (Español)';
     }
     
-    // Actualizar el idioma del reconocimiento en tiempo real si está activo
     if (recognition) {
         recognition.lang = languageSelect.value === 'en' ? 'en-US' : 'es-MX';
     }
 });
 
 let recognition;
-if ('webkitSpeechRecognition' in window) {
-    recognition = new webkitSpeechRecognition();
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'es-MX';
     
     recognition.onresult = (event) => {
         let interimT = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             interimT += event.results[i][0].transcript;
         }
-        transcriptionOutput.value = accumulatedOriginal + interimT;
+        currentInterim = interimT;
+        transcriptionOutput.value = accumulatedOriginal + currentInterim;
         transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
+    };
+    
+    recognition.onerror = () => {};
+    
+    recognition.onend = () => {
+        if (isRecordingLoop) {
+            try { recognition.start(); } catch(e) {}
+        }
     };
 }
 
@@ -56,22 +66,23 @@ recordBtn.addEventListener('click', async () => {
     try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         isRecordingLoop = true;
+        pendingWhisperRequests = 0;
         
         accumulatedOriginal = "";
         accumulatedTranslation = "";
         accumulatedSimplified = "";
+        currentInterim = "";
         transcriptionOutput.value = "";
         translationOutput.value = "";
         simplifiedOutput.value = "";
 
         recordBtn.disabled = true;
         stopBtn.disabled = false;
-        statusText.textContent = 'Clase en curso... (Grabando y procesando en bucle seguro)';
+        statusText.textContent = 'Clase en curso... (Grabando y procesando con Whisper en tiempo real)';
         statusText.className = 'status recording';
         
         if (recognition) {
             recognition.lang = languageSelect.value === 'en' ? 'en-US' : 'es-MX';
-            try { recognition.start(); } catch(e) {}
         }
 
         startChunk();
@@ -85,6 +96,18 @@ recordBtn.addEventListener('click', async () => {
 
 function startChunk() {
     if (!isRecordingLoop) return;
+    
+    // Reiniciamos recognition para que el interim text no se acumule de fragmentos pasados
+    if (recognition) {
+        try { recognition.stop(); } catch(e) {}
+        setTimeout(() => {
+            if (isRecordingLoop) {
+                try { recognition.start(); } catch(e) {}
+            }
+        }, 100);
+    }
+    
+    currentInterim = ""; // Limpiar interim de este chunk
     
     mediaRecorder = new MediaRecorder(stream);
     audioChunks = [];
@@ -106,29 +129,43 @@ function startChunk() {
         } else {
             stream.getTracks().forEach(track => track.stop());
             if (recognition) { try { recognition.stop(); } catch(e) {} }
-            statusText.textContent = 'Clase finalizada. Procesando últimos fragmentos...';
-            statusText.className = 'status success';
+            checkIfFinished();
         }
     };
 
     mediaRecorder.start();
     
+    // REDUCIDO a 8 segundos para que las versiones de la IA salgan "en tiempo real"
     setTimeout(() => {
         if (mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
         }
-    }, 30000);
+    }, 8000); 
 }
 
 stopBtn.addEventListener('click', () => {
     isRecordingLoop = false;
+    
+    // Deshabilitamos temporalmente para evitar bugs visuales
+    stopBtn.disabled = true;
+    statusText.textContent = 'Procesando último fragmento con Whisper...';
+    statusText.className = 'status recording';
+
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
+    } else {
+        checkIfFinished();
     }
-    
-    recordBtn.disabled = false;
-    stopBtn.disabled = true;
 });
+
+function checkIfFinished() {
+    if (!isRecordingLoop && pendingWhisperRequests === 0) {
+        statusText.textContent = 'Clase finalizada. Todo fue guardado exitosamente.';
+        statusText.className = 'status success';
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
+    }
+}
 
 // Helper para convertir Blob a Base64
 function blobToBase64(blob) {
@@ -144,10 +181,11 @@ function blobToBase64(blob) {
 }
 
 async function sendToWhisper(audioBlob, lang) {
+    pendingWhisperRequests++;
     try {
         const audioBase64 = await blobToBase64(audioBlob);
         
-        // Llamada a nuestro servidor Vercel local en lugar de OpenAI directo
+        // Llamada al servidor Vercel local para Whisper
         const response = await fetch('/api/transcribe', {
             method: 'POST',
             headers: {
@@ -161,23 +199,27 @@ async function sendToWhisper(audioBlob, lang) {
         }
 
         const data = await response.json();
-        let normalText = data.text.trim();
+        let normalText = data.text?.trim();
         if (!normalText) return;
 
-        accumulatedOriginal += normalText + "\n\n";
-        transcriptionOutput.value = accumulatedOriginal;
+        accumulatedOriginal += normalText + " ";
+        transcriptionOutput.value = accumulatedOriginal + currentInterim;
         transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
         
         await processWithAI(normalText, lang);
 
     } catch (error) {
-        console.error("Error al transcribir un fragmento:", error);
+        console.error("Error al transcribir un fragmento (Whisper):", error);
+        statusText.textContent = 'Error al conectar con la API (Revisa consola)';
+        statusText.className = 'status error';
+    } finally {
+        pendingWhisperRequests--;
+        checkIfFinished();
     }
 }
 
 async function processWithAI(text, lang) {
     try {
-        // Llamada a nuestro servidor Vercel local
         const response = await fetch('/api/process', {
             method: 'POST',
             headers: {
@@ -206,3 +248,4 @@ async function processWithAI(text, lang) {
         console.error("Error al procesar con IA:", error);
     }
 }
+
