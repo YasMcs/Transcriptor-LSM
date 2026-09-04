@@ -46,23 +46,13 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         let interim = '';
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const result = event.results[i];
-            if (result.isFinal) {
-                // Resultado confirmado: acumular permanentemente
-                const finalText = result[0].transcript.trim();
-                if (finalText) {
-                    accumulatedOriginal += finalText + ' ';
-                    // Disparar procesamiento de IA inmediatamente con cada oración final
-                    processWithAI(finalText, languageSelect.value);
-                }
-            } else {
-                // Resultado provisional: mostrar mientras se habla
-                interim += result[0].transcript;
-            }
+            // Solo usar texto provisional para mostrar en pantalla en tiempo real
+            // NO acumulamos ni procesamos con IA aquí — eso lo hace Whisper (más preciso)
+            interim += event.results[i][0].transcript;
         }
 
         currentInterim = interim;
-        // Pantalla = texto permanente confirmado + lo que se está diciendo AHORA
+        // Pantalla = texto confirmado por Whisper + lo que se dice AHORA (provisional)
         transcriptionOutput.value = accumulatedOriginal + currentInterim;
         transcriptionOutput.scrollTop = transcriptionOutput.scrollHeight;
     };

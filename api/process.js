@@ -53,7 +53,7 @@ Ejemplo: Si el texto dice "Hoy vamos a aprender sobre las funciones matemáticas
                     { role: "system", content: systemPrompt },
                     { role: "user", content: text }
                 ],
-                temperature: 0.1
+                temperature: 0
             })
         });
 
