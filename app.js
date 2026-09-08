@@ -2,6 +2,11 @@ let stream;
 let isRecording = false;
 let pendingWhisperRequests = 0;
 
+// Configuración del servidor Backend (URL configurable)
+const BACKEND_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:3000'
+    : '';
+
 // Sistema basado en segmentos
 let segments = [];
 let currentSegmentId = 0;
@@ -321,7 +326,7 @@ async function sendToWhisper(audioBlob, lang, segmentId) {
             const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'webm';
             const audioBase64 = await blobToBase64(audioBlob);
 
-            const response = await fetch('/api/transcribe', {
+            const response = await fetch(`${BACKEND_URL}/api/transcribe`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ audioBase64, language: lang, mimeType, ext })
@@ -363,7 +368,7 @@ async function sendToWhisper(audioBlob, lang, segmentId) {
 async function processWithAI(text, lang, segmentId) {
     if (!text || text.length < 3) return;
     try {
-        const response = await fetch('/api/process', {
+        const response = await fetch(`${BACKEND_URL}/api/process`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, lang })
