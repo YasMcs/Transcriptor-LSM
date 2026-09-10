@@ -180,21 +180,27 @@ export default function StudentView() {
               style={{ scrollBehavior: 'smooth' }}
             >
               {currentText ? (
-                currentText.split('\n').map((line, i) => (
-                  <span key={i}>
-                    <span
-                      className={`text-xl font-semibold ${activeMode === 'lsm' ? 'text-white capitalize' : 'text-slate-100'}`}
-                      style={{
-                        animation: 'fadeIn 0.3s ease forwards',
-                      }}
-                    >
-                      {line}
-                    </span>
-                    {i < currentText.split('\n').length - 1 && (
-                      <span className="text-slate-500 mx-2">·</span>
-                    )}
-                  </span>
-                ))
+                <div className="space-y-5">
+                  {currentText
+                    .split(/\n+/)
+                    .map(p => p.trim())
+                    .filter(p => p.length > 0)
+                    .map((paragraphText, i) => (
+                      <p
+                        key={i}
+                        className={`text-xl font-medium leading-relaxed tracking-wide ${
+                          activeMode === 'lsm' ? 'text-white capitalize' : 'text-slate-100'
+                        }`}
+                        style={{
+                          animation: 'fadeIn 0.3s ease forwards',
+                        }}
+                      >
+                        {paragraphText}
+                      </p>
+                    ))}
+                  {/* Cursor parpadeante al final */}
+                  <span className="inline-block w-2 h-5 bg-blue-400 animate-pulse align-middle" />
+                </div>
               ) : (
                 <p className="text-slate-500 italic text-sm">Escuchando clase...</p>
               )}
