@@ -8,16 +8,20 @@ const CLASS_ID = 'clase-123';
 
 export default function StudentView() {
   const [connected, setConnected] = useState(false);
-  const [transcript, setTranscript] = useState<string>('');
+  const [lsmTranscript, setLsmTranscript] = useState<string>('');
+  const [originalTranscript, setOriginalTranscript] = useState<string>('');
+  const [activeMode, setActiveMode] = useState<'lsm' | 'original'>('lsm');
   const [classStarted, setClassStarted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll al fondo cada vez que llega texto nuevo
+  const currentText = activeMode === 'lsm' ? lsmTranscript : originalTranscript;
+
+  // Auto-scroll al fondo cada vez que cambia el texto o el modo activo
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcript]);
+  }, [lsmTranscript, originalTranscript, activeMode]);
 
   useEffect(() => {
     const socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
@@ -29,12 +33,22 @@ export default function StudentView() {
 
     socket.on('disconnect', () => setConnected(false));
 
-    socket.on('receive_transcription', (data: { lsm: string, fullLsm?: string }) => {
-      // Usar fullLsm (acumulado por el backend) si está disponible; si no, usar lsm
-      const currentText = data.fullLsm || data.lsm;
-      if (!currentText) return;
+    socket.on('receive_transcription', (data: { text?: string, fullTranscription?: string, lsm?: string, fullLsm?: string }) => {
       setClassStarted(true);
-      setTranscript(currentText);
+
+      // Actualizar Gramática LSM en tiempo real
+      if (data.fullLsm !== undefined && data.fullLsm !== null) {
+        setLsmTranscript(data.fullLsm);
+      } else if (data.lsm) {
+        setLsmTranscript(prev => (prev ? `${prev}\n\n${data.lsm}` : data.lsm!));
+      }
+
+      // Actualizar Transcripción Original en tiempo real
+      if (data.fullTranscription !== undefined && data.fullTranscription !== null) {
+        setOriginalTranscript(data.fullTranscription);
+      } else if (data.text) {
+        setOriginalTranscript(prev => (prev ? `${prev}\n\n${data.text}` : data.text!));
+      }
     });
 
     return () => {
@@ -64,7 +78,7 @@ export default function StudentView() {
           {/* Botón limpiar */}
           {classStarted && (
             <button
-              onClick={() => { setTranscript(''); setClassStarted(false); }}
+              onClick={() => { setLsmTranscript(''); setOriginalTranscript(''); setClassStarted(false); }}
               className="text-slate-500 hover:text-slate-300 text-xs transition-colors flex items-center gap-1.5"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -103,24 +117,58 @@ export default function StudentView() {
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-slate-200">Esperando al docente...</h2>
               <p className="text-slate-500 text-sm max-w-xs">
-                La transcripción en Lengua de Señas Mexicana aparecerá aquí cuando el docente inicie la clase.
+                La transcripción en Lengua de Señas Mexicana o el texto original aparecerán aquí cuando el docente inicie la clase.
               </p>
             </div>
           </div>
 
         ) : (
-          /* Contenedor unificado de transcripción con scroll automático */
+          /* Contenedor unificado de transcripción con selector de modo */
           <div className="flex-1 flex flex-col gap-3 overflow-hidden">
 
-            {/* Label superior */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-              <p className="text-blue-400 text-xs font-semibold uppercase tracking-widest">
-                Transcripción LSM en vivo
+            {/* Selector de Modo (Tabs para el Alumno) */}
+            <div className="flex items-center justify-between flex-shrink-0 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-1 w-full sm:w-auto">
+                <button
+                  onClick={() => setActiveMode('lsm')}
+                  className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+                    activeMode === 'lsm'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${activeMode === 'lsm' ? 'bg-white animate-pulse' : 'bg-slate-500'}`} />
+                  Gramática LSM
+                </button>
+
+                <button
+                  onClick={() => setActiveMode('original')}
+                  className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+                    activeMode === 'original'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${activeMode === 'original' ? 'bg-white animate-pulse' : 'bg-slate-500'}`} />
+                  Transcripción Original
+                </button>
+              </div>
+
+              {/* Indicador de estado en vivo */}
+              <div className="hidden sm:flex items-center gap-2 px-3 text-xs text-blue-400 font-medium">
+                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                EN VIVO
+              </div>
+            </div>
+
+            {/* Sub-label descriptivo según modo */}
+            <div className="flex items-center justify-between px-1 flex-shrink-0 text-xs text-slate-400">
+              <p className="font-medium">
+                {activeMode === 'lsm' ? 'Estructura LSM: Tiempo · Lugar · Sujeto · Objeto · Verbo' : 'Texto dictado por el docente'}
               </p>
             </div>
 
-            {/* Caja de texto con scroll */}
+            {/* Caja de texto unificada con scroll */}
             <div
               ref={scrollRef}
               className="
@@ -131,21 +179,25 @@ export default function StudentView() {
               "
               style={{ scrollBehavior: 'smooth' }}
             >
-              {transcript.split('\n').map((line, i) => (
-                <span key={i}>
-                  <span
-                    className="text-white text-xl font-semibold capitalize"
-                    style={{
-                      animation: 'fadeIn 0.4s ease forwards',
-                    }}
-                  >
-                    {line}
+              {currentText ? (
+                currentText.split('\n').map((line, i) => (
+                  <span key={i}>
+                    <span
+                      className={`text-xl font-semibold ${activeMode === 'lsm' ? 'text-white capitalize' : 'text-slate-100'}`}
+                      style={{
+                        animation: 'fadeIn 0.3s ease forwards',
+                      }}
+                    >
+                      {line}
+                    </span>
+                    {i < currentText.split('\n').length - 1 && (
+                      <span className="text-slate-500 mx-2">·</span>
+                    )}
                   </span>
-                  {i < transcript.split('\n').length - 1 && (
-                    <span className="text-slate-500 mx-2">·</span>
-                  )}
-                </span>
-              ))}
+                ))
+              ) : (
+                <p className="text-slate-500 italic text-sm">Escuchando clase...</p>
+              )}
               {/* Cursor parpadeante al final */}
               <span className="inline-block w-0.5 h-5 bg-blue-400 ml-1 animate-pulse align-middle" />
             </div>
