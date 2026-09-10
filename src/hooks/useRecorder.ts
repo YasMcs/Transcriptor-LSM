@@ -30,7 +30,18 @@ export function useRecorder() {
     if (!isRecordingRef.current || isPausedRef.current) return;
     isPausedRef.current = true;
     setIsPaused(true);
-    if (recorderRef.current?.state === 'recording') recorderRef.current.pause();
+
+    // Silenciar la entrada del micrófono para que no se capture audio mientras esté en pausa
+    if (streamRef.current) {
+      streamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = false;
+      });
+    }
+
+    if (recorderRef.current && recorderRef.current.state === 'recording') {
+      try { recorderRef.current.pause(); } catch (_) {}
+    }
+
     try { recognitionRef.current?.stop(); } catch (_) {}
     setStatus('⏸ Clase en pausa');
   };
@@ -39,7 +50,21 @@ export function useRecorder() {
     if (!isRecordingRef.current || !isPausedRef.current) return;
     isPausedRef.current = false;
     setIsPaused(false);
-    if (recorderRef.current?.state === 'paused') recorderRef.current.resume();
+
+    // Reactivar la entrada del micrófono
+    if (streamRef.current) {
+      streamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = true;
+      });
+    }
+
+    if (recorderRef.current && recorderRef.current.state === 'paused') {
+      try { recorderRef.current.resume(); } catch (_) {}
+    } else {
+      currentSegmentIdRef.current++;
+      recorderRef.current = iniciarGrabacionDeSegmento(currentSegmentIdRef.current);
+    }
+
     try { recognitionRef.current?.start(); } catch (_) {}
     setStatus('🔴 Grabando clase en vivo...');
   };
@@ -71,6 +96,7 @@ export function useRecorder() {
   };
 
   const processWithAI = async (text: string, lang: string, segmentId: number, fullTranscription?: string) => {
+    if (isPausedRef.current || !isRecordingRef.current) return;
     if (!text || text.length < 3) return;
     try {
       contextBufferRef.current = [...contextBufferRef.current, text].slice(-3);
@@ -86,7 +112,7 @@ export function useRecorder() {
       const data = await response.json();
       console.log(`✅ LSM recibido (segmento ${segmentId}):`, data.lsm);
 
-      if (socketRef.current) {
+      if (socketRef.current && !isPausedRef.current) {
         socketRef.current.emit('send_transcription', {
           classId: CLASS_ID,
           data: { 
@@ -104,6 +130,7 @@ export function useRecorder() {
   };
 
   const sendToWhisper = async (audioBlob: Blob, segmentId: number) => {
+    if (isPausedRef.current || !isRecordingRef.current) return;
     pendingRequestsRef.current++;
     try {
       const mimeType = audioBlob.type || 'audio/webm';
@@ -128,7 +155,7 @@ export function useRecorder() {
       const data = await response.json();
       const whisperText = data.text?.trim();
 
-      if (whisperText) {
+      if (whisperText && !isPausedRef.current) {
         console.log(`🎙️ Whisper transcribió (segmento ${segmentId}): "${whisperText}"`);
         await processWithAI(whisperText, 'es', segmentId, data.fullTranscription);
       }
@@ -147,19 +174,19 @@ export function useRecorder() {
   };
 
   const iniciarGrabacionDeSegmento = (id: number): MediaRecorder | null => {
-    if (!streamRef.current || !isRecordingRef.current) return null;
+    if (!streamRef.current || !isRecordingRef.current || isPausedRef.current) return null;
 
     const mimeType = getSupportedMimeType();
     const localRecorder = new MediaRecorder(streamRef.current, { mimeType });
     const audioChunks: Blob[] = [];
 
     localRecorder.ondataavailable = event => {
-      if (event.data.size > 0) audioChunks.push(event.data);
+      if (event.data.size > 0 && !isPausedRef.current) audioChunks.push(event.data);
     };
 
     localRecorder.onstop = () => {
       const audioBlob = new Blob(audioChunks, { type: mimeType });
-      if (audioBlob.size > 20000) {
+      if (!isPausedRef.current && audioBlob.size > 20000) {
         sendToWhisper(audioBlob, id);
       }
       if (!isRecordingRef.current) {
@@ -172,7 +199,7 @@ export function useRecorder() {
     localRecorder.start();
 
     setTimeout(() => {
-      if (isRecordingRef.current && localRecorder.state === 'recording') {
+      if (isRecordingRef.current && !isPausedRef.current && localRecorder.state === 'recording') {
         localRecorder.stop();
         currentSegmentIdRef.current++;
         recorderRef.current = iniciarGrabacionDeSegmento(currentSegmentIdRef.current);
@@ -184,11 +211,13 @@ export function useRecorder() {
 
   const startRecording = async (topicContext: string = '') => {
     try {
-      console.log('🎙️ Solicitando acceso al micrófono...');
+      console.log('Solicitando acceso al microfono...');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      isPausedRef.current = false;
+      setIsPaused(false);
       setRecording(true);
-      setStatus('🟢 Preparando clase...');
+      setStatus('Preparando clase...');
       currentSegmentIdRef.current = 0;
       pendingRequestsRef.current = 0;
 
@@ -213,11 +242,12 @@ export function useRecorder() {
         recognition.lang = 'es-MX';
 
         recognition.onresult = (event: any) => {
+          if (isPausedRef.current || !isRecordingRef.current) return;
           let finalSegment = '';
           for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) finalSegment += event.results[i][0].transcript;
           }
-          if (finalSegment.trim()) {
+          if (finalSegment.trim() && !isPausedRef.current) {
             if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
             currentSegmentIdRef.current++;
             recorderRef.current = iniciarGrabacionDeSegmento(currentSegmentIdRef.current);
@@ -225,10 +255,10 @@ export function useRecorder() {
         };
 
         recognition.onerror = () => {
-          if (isRecordingRef.current) setTimeout(() => { try { recognition.start(); } catch (_) {} }, 1000);
+          if (isRecordingRef.current && !isPausedRef.current) setTimeout(() => { try { recognition.start(); } catch (_) {} }, 1000);
         };
         recognition.onend = () => {
-          if (isRecordingRef.current) { try { recognition.start(); } catch (_) {} }
+          if (isRecordingRef.current && !isPausedRef.current) { try { recognition.start(); } catch (_) {} }
         };
 
         try { recognition.start(); recognitionRef.current = recognition; } catch (_) {}
@@ -237,14 +267,22 @@ export function useRecorder() {
       recorderRef.current = iniciarGrabacionDeSegmento(currentSegmentIdRef.current);
       setStatus('🔴 Grabando clase en vivo...');
     } catch (error) {
-      console.error('Error al acceder al micrófono:', error);
-      setStatus('❌ Error: Permiso denegado');
+      console.error('Error al acceder al microfono:', error);
+      setStatus('Error: Permiso denegado');
     }
   };
 
   const stopRecording = () => {
+    isPausedRef.current = false;
+    setIsPaused(false);
     setRecording(false);
     setStatus('⏳ Procesando últimos segmentos...');
+    
+    // Reactivar pistas por si estaban deshabilitadas antes de cerrar
+    if (streamRef.current) {
+      streamRef.current.getAudioTracks().forEach(t => t.enabled = true);
+    }
+
     if (recorderRef.current?.state !== 'inactive') {
       recorderRef.current?.stop();
     } else {
