@@ -8,9 +8,10 @@ const CLASS_ID = 'clase-123';
 
 export function useRecorder() {
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [status, setStatus] = useState('Listo para grabar');
 
-  // Refs para evitar closures stale en callbacks asíncronos
+  const isPausedRef = useRef(false);
   const isRecordingRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -18,14 +19,31 @@ export function useRecorder() {
   const currentSegmentIdRef = useRef(0);
   const pendingRequestsRef = useRef(0);
   const socketRef = useRef<Socket | null>(null);
+  const contextBufferRef = useRef<string[]>([]);
 
-  // Mantener el ref sincronizado con el state
   const setRecording = (value: boolean) => {
     isRecordingRef.current = value;
     setIsRecording(value);
   };
 
-  // Inicializar WebSocket
+  const pauseRecording = () => {
+    if (!isRecordingRef.current || isPausedRef.current) return;
+    isPausedRef.current = true;
+    setIsPaused(true);
+    if (recorderRef.current?.state === 'recording') recorderRef.current.pause();
+    try { recognitionRef.current?.stop(); } catch (_) {}
+    setStatus('⏸ Clase en pausa');
+  };
+
+  const resumeRecording = () => {
+    if (!isRecordingRef.current || !isPausedRef.current) return;
+    isPausedRef.current = false;
+    setIsPaused(false);
+    if (recorderRef.current?.state === 'paused') recorderRef.current.resume();
+    try { recognitionRef.current?.start(); } catch (_) {}
+    setStatus('🔴 Grabando clase en vivo...');
+  };
+
   useEffect(() => {
     const socket = io(BACKEND_URL, {
       transports: ['websocket', 'polling'],
@@ -52,14 +70,17 @@ export function useRecorder() {
     return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
   };
 
-  const processWithAI = async (text: string, lang: string, segmentId: number) => {
+  const processWithAI = async (text: string, lang: string, segmentId: number, fullTranscription?: string) => {
     if (!text || text.length < 3) return;
     try {
-      console.log(`📤 Enviando a /api/process: "${text}"`);
+      contextBufferRef.current = [...contextBufferRef.current, text].slice(-3);
+      const context = contextBufferRef.current.slice(0, -1).join(' '); 
+
+      console.log(`📤 Enviando a /api/process: "${text}" | Contexto: "${context}"`);
       const response = await fetch(`${BACKEND_URL}/api/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, lang }),
+        body: JSON.stringify({ text, lang, context, classId: CLASS_ID }),
       });
       if (!response.ok) throw new Error(`Error en /api/process: ${response.status}`);
       const data = await response.json();
@@ -68,7 +89,12 @@ export function useRecorder() {
       if (socketRef.current) {
         socketRef.current.emit('send_transcription', {
           classId: CLASS_ID,
-          data: { lsm: data.lsm },
+          data: { 
+            text: text, 
+            fullTranscription: fullTranscription, 
+            lsm: data.lsm, 
+            fullLsm: data.fullLsm 
+          },
         });
         console.log('📡 send_transcription emitido');
       }
@@ -94,7 +120,7 @@ export function useRecorder() {
       const response = await fetch(`${BACKEND_URL}/api/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioBase64, language: 'es', mimeType, ext }),
+        body: JSON.stringify({ audioBase64, language: 'es', mimeType, ext, classId: CLASS_ID }),
       });
 
       if (!response.ok) throw new Error(`Error en /api/transcribe: ${response.status}`);
@@ -104,7 +130,7 @@ export function useRecorder() {
 
       if (whisperText) {
         console.log(`🎙️ Whisper transcribió (segmento ${segmentId}): "${whisperText}"`);
-        await processWithAI(whisperText, 'es', segmentId);
+        await processWithAI(whisperText, 'es', segmentId, data.fullTranscription);
       }
     } catch (error) {
       console.error('Error Whisper:', error);
@@ -120,24 +146,21 @@ export function useRecorder() {
     }
   };
 
-  // Usa isRecordingRef (no el state) para evitar closures stale
   const iniciarGrabacionDeSegmento = (id: number): MediaRecorder | null => {
     if (!streamRef.current || !isRecordingRef.current) return null;
 
-    const localChunks: BlobPart[] = [];
     const mimeType = getSupportedMimeType();
-    const localRecorder = new MediaRecorder(streamRef.current, mimeType ? { mimeType } : {});
+    const localRecorder = new MediaRecorder(streamRef.current, { mimeType });
+    const audioChunks: Blob[] = [];
 
-    localRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) localChunks.push(e.data);
+    localRecorder.ondataavailable = event => {
+      if (event.data.size > 0) audioChunks.push(event.data);
     };
 
     localRecorder.onstop = () => {
-      const blob = new Blob(localChunks, { type: localRecorder.mimeType || 'audio/webm' });
-      if (blob.size >= 1000) {
-        sendToWhisper(blob, id);
-      } else {
-        console.log(`Segmento ${id} demasiado corto (${blob.size} bytes), descartando.`);
+      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      if (audioBlob.size > 20000) {
+        sendToWhisper(audioBlob, id);
       }
       if (!isRecordingRef.current) {
         streamRef.current?.getTracks().forEach(t => t.stop());
@@ -148,7 +171,6 @@ export function useRecorder() {
 
     localRecorder.start();
 
-    // Cortar cada 6 segundos — usa isRecordingRef para no tener closure stale
     setTimeout(() => {
       if (isRecordingRef.current && localRecorder.state === 'recording') {
         localRecorder.stop();
@@ -160,14 +182,28 @@ export function useRecorder() {
     return localRecorder;
   };
 
-  const startRecording = async () => {
+  const startRecording = async (topicContext: string = '') => {
     try {
+      console.log('🎙️ Solicitando acceso al micrófono...');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      setRecording(true); // actualiza ref Y state
-      setStatus('🔴 Grabando clase en vivo...');
+      setRecording(true);
+      setStatus('🟢 Preparando clase...');
       currentSegmentIdRef.current = 0;
       pendingRequestsRef.current = 0;
+
+      if (topicContext) {
+        try {
+          await fetch(`${BACKEND_URL}/api/class/context`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ classId: CLASS_ID, topicContext }),
+          });
+          console.log('✅ Contexto de clase enviado:', topicContext);
+        } catch (err) {
+          console.error('Error al enviar contexto de clase:', err);
+        }
+      }
 
       if (typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
         const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -199,14 +235,15 @@ export function useRecorder() {
       }
 
       recorderRef.current = iniciarGrabacionDeSegmento(currentSegmentIdRef.current);
-    } catch (err) {
-      console.error('Error al acceder al micrófono:', err);
-      setStatus('❌ Error: No se pudo acceder al micrófono.');
+      setStatus('🔴 Grabando clase en vivo...');
+    } catch (error) {
+      console.error('Error al acceder al micrófono:', error);
+      setStatus('❌ Error: Permiso denegado');
     }
   };
 
   const stopRecording = () => {
-    setRecording(false); // actualiza ref Y state
+    setRecording(false);
     setStatus('⏳ Procesando últimos segmentos...');
     if (recorderRef.current?.state !== 'inactive') {
       recorderRef.current?.stop();
@@ -217,5 +254,5 @@ export function useRecorder() {
     }
   };
 
-  return { isRecording, status, startRecording, stopRecording };
+  return { isRecording, isPaused, status, startRecording, stopRecording, pauseRecording, resumeRecording };
 }
