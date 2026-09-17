@@ -167,9 +167,31 @@ export function useRecorder() {
     }
   };
 
-  const checkIfFinished = () => {
+  const checkIfFinished = async () => {
     if (!isRecordingRef.current && pendingRequestsRef.current === 0) {
-      setStatus('✅ Clase finalizada y procesada.');
+      setStatus('⏳ Finalizando clase y generando resumen...');
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/class/end`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ classId: CLASS_ID })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            if (data.document && socketRef.current) {
+            socketRef.current.emit('send_transcription', {
+                classId: CLASS_ID,
+                data: { isEnd: true, document: data.document }
+            });
+            }
+            setStatus('✅ Clase finalizada. Documentos generados.');
+        } else {
+            setStatus('✅ Clase finalizada (Sin contexto suficiente para resumen).');
+        }
+      } catch (err) {
+        console.error('Error al finalizar la clase', err);
+        setStatus('✅ Clase finalizada (error al resumir).');
+      }
     }
   };
 

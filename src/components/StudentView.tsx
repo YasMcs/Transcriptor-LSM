@@ -10,8 +10,10 @@ export default function StudentView() {
   const [connected, setConnected] = useState(false);
   const [lsmTranscript, setLsmTranscript] = useState<string>('');
   const [originalTranscript, setOriginalTranscript] = useState<string>('');
-  const [activeMode, setActiveMode] = useState<'lsm' | 'original'>('lsm');
+  const [activeMode, setActiveMode] = useState<'lsm' | 'original' | 'summary'>('lsm');
   const [classStarted, setClassStarted] = useState(false);
+  const [classEnded, setClassEnded] = useState(false);
+  const [summaryDocument, setSummaryDocument] = useState<{ summary: string, fullTranscription: string, fullLsm: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentText = activeMode === 'lsm' ? lsmTranscript : originalTranscript;
@@ -33,7 +35,14 @@ export default function StudentView() {
 
     socket.on('disconnect', () => setConnected(false));
 
-    socket.on('receive_transcription', (data: { text?: string, fullTranscription?: string, lsm?: string, fullLsm?: string }) => {
+    socket.on('receive_transcription', (data: { text?: string, fullTranscription?: string, lsm?: string, fullLsm?: string, isEnd?: boolean, document?: any }) => {
+      if (data.isEnd && data.document) {
+        setSummaryDocument(data.document);
+        setClassEnded(true);
+        setActiveMode('summary');
+        return;
+      }
+      
       setClassStarted(true);
 
       // Actualizar Gramática LSM en tiempo real
@@ -76,7 +85,7 @@ export default function StudentView() {
 
         <div className="flex items-center gap-3">
           {/* Botón limpiar */}
-          {classStarted && (
+          {classStarted && !classEnded && (
             <button
               onClick={() => { setLsmTranscript(''); setOriginalTranscript(''); setClassStarted(false); }}
               className="text-slate-500 hover:text-slate-300 text-xs transition-colors flex items-center gap-1.5"
@@ -128,7 +137,7 @@ export default function StudentView() {
 
             {/* Selector de Modo (Tabs para el Alumno) */}
             <div className="flex items-center justify-between flex-shrink-0 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800">
-              <div className="flex items-center gap-1 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-1 w-full sm:w-auto">
                 <button
                   onClick={() => setActiveMode('lsm')}
                   className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
@@ -137,7 +146,7 @@ export default function StudentView() {
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${activeMode === 'lsm' ? 'bg-white animate-pulse' : 'bg-slate-500'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${activeMode === 'lsm' && !classEnded ? 'bg-white animate-pulse' : activeMode === 'lsm' ? 'bg-white' : 'bg-slate-500'}`} />
                   Gramática LSM
                 </button>
 
@@ -149,22 +158,38 @@ export default function StudentView() {
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${activeMode === 'original' ? 'bg-white animate-pulse' : 'bg-slate-500'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${activeMode === 'original' && !classEnded ? 'bg-white animate-pulse' : activeMode === 'original' ? 'bg-white' : 'bg-slate-500'}`} />
                   Transcripción Original
                 </button>
+                
+                {classEnded && (
+                  <button
+                    onClick={() => setActiveMode('summary')}
+                    className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+                      activeMode === 'summary'
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${activeMode === 'summary' ? 'bg-white' : 'bg-slate-500'}`} />
+                    Resumen Académico
+                  </button>
+                )}
               </div>
 
               {/* Indicador de estado en vivo */}
-              <div className="hidden sm:flex items-center gap-2 px-3 text-xs text-blue-400 font-medium">
-                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                EN VIVO
+              <div className={`hidden sm:flex items-center gap-2 px-3 text-xs font-medium ${classEnded ? 'text-slate-400' : 'text-blue-400'}`}>
+                <span className={`w-2 h-2 rounded-full ${classEnded ? 'bg-slate-400' : 'bg-blue-400 animate-pulse'}`} />
+                {classEnded ? 'FINALIZADO' : 'EN VIVO'}
               </div>
             </div>
 
             {/* Sub-label descriptivo según modo */}
             <div className="flex items-center justify-between px-1 flex-shrink-0 text-xs text-slate-400">
               <p className="font-medium">
-                {activeMode === 'lsm' ? 'Estructura LSM: Tiempo · Lugar · Sujeto · Objeto · Verbo' : 'Texto dictado por el docente'}
+                {activeMode === 'lsm' && 'Estructura LSM: Tiempo · Lugar · Sujeto · Objeto · Verbo'}
+                {activeMode === 'original' && 'Texto dictado por el docente'}
+                {activeMode === 'summary' && 'Resumen académico de la clase generado por IA'}
               </p>
             </div>
 
@@ -179,7 +204,14 @@ export default function StudentView() {
               "
               style={{ scrollBehavior: 'smooth' }}
             >
-              {currentText ? (
+              {activeMode === 'summary' && summaryDocument ? (
+                <div className="space-y-4 text-slate-200 markdown-body">
+                   {/* Renderizando el resumen como texto preformateado o markdown simple por ahora */}
+                   <div className="whitespace-pre-wrap text-lg leading-relaxed">
+                     {summaryDocument.summary}
+                   </div>
+                </div>
+              ) : currentText ? (
                 <div className="space-y-5">
                   {currentText
                     .split(/\n+/)
@@ -198,14 +230,12 @@ export default function StudentView() {
                         {paragraphText}
                       </p>
                     ))}
-                  {/* Cursor parpadeante al final */}
-                  <span className="inline-block w-2 h-5 bg-blue-400 animate-pulse align-middle" />
+                  {/* Cursor parpadeante al final si no ha terminado la clase */}
+                  {!classEnded && <span className="inline-block w-2 h-5 bg-blue-400 animate-pulse align-middle" />}
                 </div>
               ) : (
                 <p className="text-slate-500 italic text-sm">Escuchando clase...</p>
               )}
-              {/* Cursor parpadeante al final */}
-              <span className="inline-block w-0.5 h-5 bg-blue-400 ml-1 animate-pulse align-middle" />
             </div>
 
           </div>
