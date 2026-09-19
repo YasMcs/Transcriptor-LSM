@@ -14,10 +14,10 @@ export default function TeacherDashboard() {
         {/* Encabezado */}
         <div className="space-y-3">
           <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Panel de Docente
+            Panel del Maestro
           </h2>
           <p className="text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-            Controla la transcripción de la clase. El audio se procesará automáticamente a Lengua de Señas Mexicana y se enviará en tiempo real a los alumnos.
+            Inicia la clase para transcribir tu voz en tiempo real. El texto se adaptará automáticamente a Lengua de Señas Mexicana (LSM) y aparecerá en la pantalla de los alumnos.
           </p>
         </div>
 
@@ -25,10 +25,10 @@ export default function TeacherDashboard() {
         {!isRecording && (
           <div className="space-y-2 text-left bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm animate-in fade-in slide-in-from-bottom-2">
             <label htmlFor="topicContext" className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Tema de la clase (opcional)
+              ¿Cuál es el tema de hoy? <span className="font-normal text-slate-400">(opcional)</span>
             </label>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Ayuda a la Inteligencia Artificial a entender mejor las expresiones y fórmulas matemáticas que usarás.
+              Escribirlo mejora la precisión de la transcripción y permite generar un mejor resumen al finalizar.
             </p>
             <input
               id="topicContext"
@@ -82,7 +82,7 @@ export default function TeacherDashboard() {
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
             </svg>
-            Iniciar Clase
+            Iniciar Clase 🎙
           </button>
 
           {/* Pausar / Reanudar */}
