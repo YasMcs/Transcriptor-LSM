@@ -4,10 +4,10 @@ Aplicación web interactiva en Next.js para transcripción en tiempo real orient
 
 ## Características
 
-- 🎙️ **Transcripción y simplificación en tiempo real** mediante WebSockets.
-- 🤟 **Vista dual configurable para estudiantes**: Gramática LSM y Transcripción Original.
-- ⏸ **Control completo de pausa/grabación de clase** con silenciado de micrófono seguro.
-- 📱 **Soporte PWA** para instalar la app en dispositivos móviles y escritorios.
+- **Transcripción y simplificación en tiempo real** mediante WebSockets.
+- **Vista dual configurable para estudiantes**: Gramática LSM y Transcripción Original.
+- **Control completo de pausa/grabación de clase** con silenciado de micrófono seguro.
+- **Soporte PWA** para instalar la app en dispositivos móviles y escritorios.
 
 ## Desarrollo local
 
